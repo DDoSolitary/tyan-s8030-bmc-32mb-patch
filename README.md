@@ -505,15 +505,15 @@ If pin identification is uncertain:
 
 Do not use resistance/continuity mode on a powered board, and do not short pins to identify them.
 
-#### 6.1.3 Getting a U-Boot prompt
+#### 6.1.3 U-Boot access and watchdog handling
 
-The stock bootloader has `bootdelay=0`. The `Hit any key to stop autoboot: 0` message does not provide a practical countdown.
+Stock v3.00 has `bootdelay=0`. All later supported firmware versions have `bootdelay=2`.
 
-Hold a printable key, such as the space bar, **before initiating the reset and continuously through the U-Boot banner**. Merely pressing keys quickly after seeing the message is usually too late.
+To interrupt autoboot on any supported version, hold a printable key, such as the space bar, **before initiating the reset and continuously through the U-Boot banner**.
 
-### 6.2 Watchdog resets during manual booting
+The BMC's hardware watchdogs can reset the system when they are not being serviced. Leaving U-Boot idle or running without the normal watchdog-management services can therefore lead to an automatic reset.
 
-Leaving U-Boot idle or running a shell through `init=/bin/sh` can lead to an automatic reset while the normal watchdog-management services are not running.
+**WARNING: Disable the watchdogs before any U-Boot flashing operation. A watchdog reset during flash erase or programming may brick the BMC and require an external programmer for recovery.**
 
 The AST2500 watchdog control register is at `base + 0x0c`. The following U-Boot commands disable watchdogs 1–3 for the current session:
 
@@ -525,9 +525,15 @@ mw 0x1e78504c 0
 
 These are hardware-register writes, not persistent firmware changes. Normal configuration is restored after reset. Use them only for controlled recovery work.
 
-### 6.3 Getting UID 0 without modifying flash
+### 6.2 The `root` and `sysadmin` accounts
 
-The existing v3.00 kernel can be started directly with `init=/bin/sh`, which bypasses login and starts PID 1 as UID 0.
+The account named `root` is UID 15000, while `sysadmin` is UID 0. Their privileges differ because of their UIDs.
+
+Password changes for `sysadmin` can be made through the web UI at **Maintenance → System Administrator**.
+
+#### 6.2.1 Getting a UID 0 shell on stock v3.00
+
+For recovery work that requires UID 0 on stock v3.00, boot the existing kernel with `init=/bin/sh`. This bypasses login and starts PID 1 as UID 0 without modifying the firmware.
 
 This U-Boot has no `sf` command. Copy the stock kernel from the flash mapping with `cp.b`:
 
@@ -550,64 +556,9 @@ mount -t proc proc /proc
 cat /proc/mtd
 ```
 
-Normal startup scripts do not run with this method.
+Normal startup scripts do not run with this method. Use it only for controlled recovery work.
 
-### 6.4 The `sysadmin` account and password handling
-
-This procedure sets a usable password for the existing UID 0 `sysadmin` account so it can be used during a normal boot. The account named `root` is UID 15000.
-
-```text
-sysadmin:x:0:0:sysadmin:/root:/usr/local/bin/defshell
-root:x:15000:15000:root:/root:/usr/local/bin/defshell
-```
-
-Perform the edits from the **temporary UID-0 shell** described in section 6.3.
-
-#### 6.4.1 Mount the configuration files
-
-In the temporary root shell, mount `/proc` and the writable JFFS2 configuration partition, then back up the account files:
-
-```sh
-mount -t proc proc /proc
-mount -t jffs2 /dev/mtdblock1 /conf
-cp /conf/passwd /conf/passwd.bak
-cp /conf/shadow /conf/shadow.bak
-```
-
-`/etc/passwd` and `/etc/shadow` are symlinks to `/conf/passwd` and `/conf/shadow`.
-
-#### 6.4.2 Edit the password with `vi`
-
-Open the shadow file with:
-
-```sh
-vi /conf/shadow
-```
-
-Use one of these password hashes for `sysadmin`:
-
-- The working SHA-256 hash from the existing `root` entry, which makes the `sysadmin` password identical to the web-`root` password, or
-- A new SHA-256 hash generated with `openssl passwd -5`.
-
-Set the last-change field to `14386` and leave the remaining aging fields in their original form:
-
-```text
-sysadmin:$5$<SHA-256-hash>:14386:0:99999:7:::
-```
-
-Avoid running BusyBox `passwd` for this change: it can create a legacy DES hash and a zero last-change timestamp. The BMC also starts at Unix epoch, 1970-01-01, until network time is synchronized, which can trigger forced-password-change behavior.
-
-Save the files, then apply the changes and reboot into the normal firmware:
-
-```sh
-sync
-umount /conf
-reboot -f
-```
-
-After the normal boot, log in as `sysadmin` with the password corresponding to the installed hash. If the hash was copied from `root`, use the existing web-`root` password; otherwise, use the password chosen when running `openssl passwd -5`. The `root` web account remains unchanged.
-
-### 6.5 Optional physical 64 MiB chip replacement
+### 6.3 Optional physical 64 MiB chip replacement
 
 This replacement was not physically tested during the firmware-patching work. The component and programmer suggestions below are based on specifications, not a verified S8030 hardware conversion.
 
@@ -630,7 +581,7 @@ Verify that the programmer software lists the exact chip and verify the written 
 
 Program a new 64 MiB chip with the original unmodified `8030010407.ima`, not the 32 MiB patch. Preserve the old chip and record the BMC MAC address and configuration before replacement. A repair technician can perform the soldering if needed.
 
-### 6.6 Future upgrades and recovery checklist
+### 6.4 Future upgrades and recovery checklist
 
 **Flashing any unmodified 64 MiB stock image will brick the BMC on a 32 MiB board.** The v3.00 web updater rejected v4.07 because of its cross-codebase check; that check does not protect updates within the v4.xx codebase. Flash only the patched output from a supported stock image. Any newly released image must be analyzed and explicitly added to the patcher before use.
 
@@ -647,7 +598,7 @@ Before any update:
 - Verify the reported firmware version, root device, flash sizes, IPMI, networking, sensors, KVM, and host power control.
 - Make a fresh backup of the working installation.
 
-### 6.7 Common non-fatal log messages
+### 6.5 Common non-fatal log messages
 
 The following messages were captured during a normal boot of the patched v4.07 installation. The BMC reached `Boot Complete`, and IPMI, sensors, the web UI, and remote KVM worked:
 
