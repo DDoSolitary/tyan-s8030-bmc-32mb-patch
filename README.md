@@ -1,20 +1,22 @@
-# Running BMC v4.07 on a Tyan S8030 with 32 MiB SPI Flash
+# Running BMC firmware v4.07+ on Tyan S8030 with 32 MiB SPI Flash
 
 **DISCLAIMER: This document and the patch script are AI-generated and may contain false information. I manually reviewed most of the content and successfully upgraded my own S8030 board with 32 MiB flash. However, there is no guarantee that it will work on your hardware. Be prepared for the possibility of bricking the BMC (which will require recovery via U-Boot or a programmer) or even permanently damaging the hardware.**
 
 ## Background and scope
 
-Early Tyan S8030 boards have a 32 MiB BMC SPI flash, while later boards have 64 MiB. Stock BMC v4.07 assumes a 64 MiB device and cannot run unmodified on the earlier boards; v3.00 is the last firmware they can use without modification.
+Early Tyan S8030 boards have a 32 MiB BMC SPI flash, while later boards have 64 MiB. Stock BMC v4.07 and the later versions covered here assume a 64 MiB device and cannot run unmodified on the earlier boards; v3.00 is the last firmware they can use without modification.
 
 One hardware alternative is to replace the 32 MiB chip with a compatible 64 MiB SPI flash chip, as discussed on ServeTheHome. Section 6.5 covers that option; the firmware patch described here avoids soldering.
 
-The normal v4.07 payloads occupy only about 30.17 MiB. The 64 MiB requirement comes from metadata placed at the end of a 64 MiB image and hard-coded flash-size assumptions in U-Boot and userspace, not from the AST2500 or the payload size. Relocating the metadata and correcting those assumptions therefore makes v4.07 fit without removing functionality.
+The normal payloads in the supported images occupy only about 30.17 MiB. The 64 MiB requirement comes from metadata placed at the end of a 64 MiB image and hard-coded flash-size assumptions in U-Boot and userspace, not from the AST2500 or the payload size. Relocating the metadata and correcting those assumptions therefore makes the firmware fit without removing functionality.
 
-The conversion produces `8030010407-32m.ima`, a 32 MiB raw image that is written to the BMC's SPI flash with ASPEED SoCFlash. This document records the analysis, exact changes, and validation of that conversion.
+The conversion produces a 32 MiB raw image that is written to the BMC's SPI flash with ASPEED SoCFlash. The patcher supports **v4.07, v4.10, v4.11, v5.00, and v6.02**. Every supported version has passed a matched stock-versus-patched QEMU boot comparison; v4.07 and v6.02 have also been validated on a physical board.
 
-The patched image boots successfully on a real S8030 board. IPMI, the web UI, sensors, remote KVM, and host boot/power control work, though this does not guarantee compatibility with every board revision or hardware configuration.
+On the physical board, IPMI, the web UI, sensors, remote KVM, and host boot/power control work with v4.07, though this does not guarantee compatibility with every board revision or hardware configuration.
 
-**This patch is specific to v4.07. Future stock firmware versions will not work unmodified on a 32 MiB board; every later image must be analyzed and patched again. Flashing an unmodified 64 MiB image will brick the BMC.**
+**WARNING: v4.10, v4.11, and v5.00 have only been boot-tested in QEMU and have not been tested on a physical S8030 board. They may still fail on real hardware.**
+
+**Only the versions explicitly listed as supported may be used with the patcher. Other stock firmware versions will not work unmodified on a 32 MiB board; each new image must be analyzed and added deliberately. Flashing an unmodified 64 MiB image will brick the BMC.**
 
 Before flashing, make a raw backup of the BMC SPI chip; it contains both firmware and persistent configuration.
 
@@ -24,18 +26,26 @@ Before flashing, make a raw backup of the BMC SPI chip; it contains both firmwar
 |---|---|---:|---|
 | `80300103.ima` | Stock BMC v3.00 | 33,554,432 bytes | `84b45653acf1d3e960d62a515e270be8e2181fa4b153fba5a15d9b19f21f161e` |
 | `8030010407.ima` | Stock BMC v4.07 | 67,108,864 bytes | `edd24c9fa4437d0ab81f1f4a6f91410602097b455d40ce66d119a8a5d5c3bb6a` |
-| `8030010407-32m.ima` | Patched v4.07 for 32 MiB | 33,554,432 bytes | `1080d54562f6ac93457c4f4f3a99931477112bb588d94677f2110a9a8c6f1ef0` |
+| `8030010407-32m.ima` | Patched v4.07 for 32 MiB | 33,554,432 bytes | `6e83eddc23db359111c26b5fddfe00bce9162cb21e0b4029bc353964194cf59a` |
+| `8030010410.ima` | Stock BMC v4.10 | 67,108,864 bytes | `a4849b7d577e9d1c51a0f3e6dfa1b4e1637503182421df7a44f602db2a2e0018` |
+| `8030010410-32m.ima` | Patched v4.10 for 32 MiB | 33,554,432 bytes | `838eade3aadcc35d7aeb1571ec1a404a7e9546a0f26f7b4c25522498886c4a03` |
+| `8030010411.ima` | Stock BMC v4.11 | 67,108,864 bytes | `160ce96489bc0347279241d41f4bf84146d7f17c9e0516d06162fed4e57ca98b` |
+| `8030010411-32m.ima` | Patched v4.11 for 32 MiB | 33,554,432 bytes | `c3110f3dda62f6641f35fa4d5497530df6a53ab68b74ded74c4fd2e26f15ce18` |
+| `BMC8030010500.ima` | Stock BMC v5.00 | 67,108,864 bytes | `b3327ffb11b65e1382d0bace111adc8dcd95c2b33bdca45c8f674552d283bc41` |
+| `BMC8030010500-32m.ima` | Patched v5.00 for 32 MiB | 33,554,432 bytes | `f157ab956d7dc35ceb6d082934332b36846d64e8c776821fff3613d3ade60be8` |
+| `BMC8030010602.ima` | Stock BMC v6.02 | 67,108,864 bytes | `445e269d612f788e30a9194a625b2f2ed20cb4511d133dc859f720358c67a67a` |
+| `BMC8030010602-32m.ima` | Patched v6.02 for 32 MiB | 33,554,432 bytes | `8387fdb5e891c7b47e7b826fbbd9991419d85f7b0840748864961f21dea2847f` |
 
-The stock images come from Tyan's official S8030 BMC firmware update packages and are not included in this repository. The patched image is generated locally by running the patcher on the stock v4.07 image.
+The stock images come from Tyan's official S8030 BMC firmware update packages and are not included in this repository. Each patched image is generated locally from the corresponding stock image.
 
-The release names used throughout this document are **v3.00** and **v4.07**. Literal metadata values are shown verbatim where relevant: v3.00 reports `3.00.1`, and v4.07 reports `4.07.0`.
+Literal metadata values are shown verbatim where relevant: v3.00 reports `3.00.1`, and v4.07 reports `4.07.0`.
 
 Recommended recovery artifacts:
 
 - The stock v3.00 image.
 - A verified full-chip backup from the board before modification.
-- The patched v4.07 image.
-- A fresh full-chip backup of the working v4.07 installation after configuration settles.
+- The patched image for the selected supported version.
+- A fresh full-chip backup of the working installation after configuration settles.
 
 ## 1. Firmware formats and stock layouts
 
@@ -188,9 +198,17 @@ At raw image offset `0x57aec`, the 32-bit last-sector value changes:
 0x000003ff -> 0x000001ff
 ```
 
-The U-Boot module CRC is regenerated.
+The U-Boot module CRC is regenerated. In v4.10, v4.11, v5.00, and v6.02, the table is at `0x57b6c`. The patcher detects it through its surrounding pointer relationships and requires a unique match rather than relying on either offset. It derives the erase-block size from the input image length and U-Boot sector count, then uses that size for metadata relocation and CRC coverage.
 
-### 3.3 Helper instruction
+### 3.3 U-Boot recovery unlock length
+
+The packet-based firmware recovery handler calls `flash_unlock(flash, 0, 0x4000000)`, requesting an unlock across the full stock chip. This is separate from normal boot. On a 32 MiB chip, the length must instead be `0x2000000` so the requested range does not exceed the device.
+
+The immediate instruction changes from `e3a02301` (`mov r2, #0x4000000`) to `e3a02402` (`mov r2, #0x2000000`). It is at `0x5aac8` in v4.07 and `0x5ab4c` in the later supported versions. The patcher identifies the instruction and its surrounding unlock sequence rather than relying on those offsets, requires a unique match, and includes it in the U-Boot payload CRC update.
+
+The recovery handler was exercised directly in QEMU with the corrected 32 MiB range and completed with the same status as before. Locked-region behavior has not been tested on physical hardware.
+
+### 3.4 Helper instruction
 
 In `/lib/modules/generic/misc/helper.ko`, at file offset `0x1988`, the ARM instruction changes:
 
@@ -204,9 +222,9 @@ to:
 e3a02402  mov r2, #0x2000000
 ```
 
-The patched helper writes 32 MiB to both `FlashSize` and `UsedFlashSize`.
+The patched helper writes 32 MiB to both `FlashSize` and `UsedFlashSize`. The patcher decodes ARM immediate MOV instructions, requires a unique match for the input flash size, and encodes the output size while preserving the destination register.
 
-### 3.4 HPM application component
+### 3.5 HPM application component
 
 In `libipmihpm.so.6.22.11`, the APP entry at file offset `0xdcf8` changes:
 
@@ -215,9 +233,9 @@ Application size:      0x03f60000 -> 0x01f60000
 Allocation size:       0x03f6000c -> 0x01f6000c
 ```
 
-These values represent 32 MiB minus the `0xa0000` boot/environment area.
+These values represent 32 MiB minus the `0xa0000` boot/environment area. The patcher derives the reserved area and allocation adjustment from the input APP entry and recomputes both fields for the output flash size.
 
-### 3.5 Configuration text
+### 3.6 Configuration text
 
 In both `/etc/core_macros` and `/info/8030.PRJ`, the two occurrences of:
 
@@ -231,7 +249,7 @@ become:
 FLASH_SIZE=0x2000000
 ```
 
-### 3.6 Checksums and filesystem packaging
+### 3.7 Checksums and filesystem packaging
 
 The root filesystem is rebuilt with XZ compression and 128 KiB blocks. Its original file structure, symlinks, ownership, modes, and timestamps are preserved. The only intended rootfs content changes are:
 
@@ -249,39 +267,36 @@ The following are regenerated as needed:
 
 The resulting file is exactly 33,554,432 bytes. All normal module bounds and CRCs validate, as do the global FMH checksum and whole-image CRC.
 
-### 3.7 Building the patched image
+### 3.8 Building the patched image
 
-The patcher is pinned to the exact supplied v4.07 source hash. It requires Python 3 and `unsquashfs`/`mksquashfs` from squashfs-tools.
+The patcher accepts only the exact stock image hashes listed in **Files and hashes** and automatically identifies the firmware version. It requires Python 3 and `unsquashfs`/`mksquashfs` from squashfs-tools, available on `PATH`.
+
+Both input and output filenames are required:
 
 ```bash
 python3 patch_8030_bmc_32m.py 8030010407.ima 8030010407-32m.ima
 ```
 
-Optional arguments select the tool paths:
-
-```bash
-python3 patch_8030_bmc_32m.py input.ima output.ima \
-  --unsquashfs /path/to/unsquashfs \
-  --mksquashfs /path/to/mksquashfs
-```
+Use the corresponding explicit filenames for other supported versions.
 
 The script:
 
-- Refuses unexpected source images or occupied space above 32 MiB.
-- Uses a temporary directory under the current working directory and removes it afterward.
+- Refuses unsupported source images, unexpected module layouts, or occupied space above 32 MiB.
+- Detects FMH locations and patch sites using structural and binary signatures, rejecting missing or ambiguous matches.
+- Uses a temporary directory and removes it afterward.
 - Preserves source files and does not modify the stock image.
-- Applies the changes listed in this document.
+- Applies the changes listed in this document and prints each modified offset with its old and new values, including regenerated CRCs and checksums.
 - Validates output size, module bounds, FMH checksums, module CRCs, U-Boot scan bound, and whole-image CRC.
 
-Do not generalize the hard-coded offsets to another firmware version without revalidating them.
+Do not use the patcher with an unlisted firmware version. Each new image must be analyzed even if its layout appears similar.
 
 ## 4. Verification and results
 
 ### 4.1 QEMU
 
-Stock and patched v4.07 were compared under matching AST2500 QEMU conditions, except for the emulated flash model.
+For every supported version, stock and patched images were compared under matching AST2500 QEMU conditions, except for the emulated flash model.
 
-Both reached:
+Both the stock and patched images reached:
 
 - `root=/dev/mtdblock3`
 - Four FMH partitions
@@ -291,7 +306,7 @@ Both reached:
 - Flasher and component manager
 - Boot Complete and login prompt
 
-The stock image reported `0x4000000`; the patched image reported `0x2000000` for flash and used-flash sizes. No new boot or service failures were introduced.
+The stock images reported `0x4000000`; the patched images reported `0x2000000` for flash and used-flash sizes. No new boot or service failures were introduced.
 
 #### QEMU invocations for the matched comparison
 
@@ -325,9 +340,11 @@ Use a standard QEMU installation and compare the serial output. `snapshot=on` is
 
 The older v3.00 image stalled in QEMU at `Image to be booted is 1`. That was an emulation limitation, not a firmware defect; the same v3.00 image works on real hardware.
 
-### 4.2 Real S8030 hardware
+### 4.2 Physical S8030 hardware validation
 
-The patched image was ultimately written with SoCFlash. Results include:
+#### v4.07
+
+Patched v4.07 was ultimately written with SoCFlash. Results include:
 
 - U-Boot 2019.04 detects 32 MiB.
 - Linux 5.4.41 mounts root on `mtdblock3`.
@@ -341,9 +358,13 @@ There are no FMH errors, `mtdblock7` selections, root-mount failures, kernel pan
 
 Not every peripheral or firmware-update path has been exhaustively tested. Treat future changes with the same caution as the initial conversion.
 
+#### v6.02
+
+Patched v6.02 was also flashed through the web UI on a 32 MiB board. The UART log confirms `DoFlash SUCCESS`, a successful reboot with root on `mtdblock3`, `FlashSize = UsedFlashSize = 0x2000000`, and `Boot Complete`. This validates both the web-update path and normal boot for v6.02 on physical hardware.
+
 ## 5. Flashing the patched image with SoCFlash
 
-Use ASPEED SoCFlash on the S8030 host to back up the BMC SPI flash and write `8030010407-32m.ima`. The firmware update package includes Windows, Linux, and UEFI versions.
+Use ASPEED SoCFlash on the S8030 host to back up the BMC SPI flash and write the selected patched image. The firmware update package includes Windows, Linux, and UEFI versions. The commands below use `8030010407-32m.ima`; substitute the corresponding patched filename for other supported versions.
 
 This v3.00-to-v4.07 upgrade changes the firmware codebase. Tyan's release notes require SoCFlash for this transition; do not use the v3.00 web updater.
 
@@ -611,7 +632,7 @@ Program a new 64 MiB chip with the original unmodified `8030010407.ima`, not the
 
 ### 6.6 Future upgrades and recovery checklist
 
-**Flashing a later unmodified 64 MiB stock image will brick the BMC on a 32 MiB board.** The v3.00 web updater rejected v4.07 because of its cross-codebase check; that check does not protect updates within the v4.xx codebase. Every later stock image must be reviewed and converted again before flashing.
+**Flashing any unmodified 64 MiB stock image will brick the BMC on a 32 MiB board.** The v3.00 web updater rejected v4.07 because of its cross-codebase check; that check does not protect updates within the v4.xx codebase. Flash only the patched output from a supported stock image. Any newly released image must be analyzed and explicitly added to the patcher before use.
 
 Before any update:
 
